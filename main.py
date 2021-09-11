@@ -1,422 +1,128 @@
 import telebot
-import requests
-import json
-import datetime
+from telebot.types import Message
+from database.users_database import users
+from classes.user_class import User
+from botrequests import lowprice, highprice, bestdeal
+from loguru import logger
 import time
-
-bot = telebot.TeleBot('1960878945:AAEKrmE35Yi956aOdIN7OeE9Iixj3MLLJ8Q')
-history = dict()
-counter = 0
+from bot_init import bot
+from loguru import logger
 
 
+logger.add('debug.log', format='{time} {level} {message}', level='DEBUG', rotation='10 MB', compression='zip')
 
-
-def get_destination_id(destination: str) -> str:
-    """
-    Функция get_destination_id. Возвращает уникальный номер искомой локации, под которым она находится в API Hotels
-    :param destination: (str) Наименование искомой локации
-    :return: (str) Уникальный номер искомой локации
-    """
-    url = "https://hotels4.p.rapidapi.com/locations/search"
-
-    querystring = {"query": destination, "locale": "ru_RU"}
-
-    headers = {
-        'x-rapidapi-host': "hotels4.p.rapidapi.com",
-        'x-rapidapi-key': "4213f44ecbmsh474379ffdaecd3ap1b4c3ajsncc60a40a7fb1"
-    }
-
-    response = requests.request("GET", url, headers=headers, params=querystring)
-    data = json.loads(response.text)
-    return data['suggestions'][0]['entities'][0]['destinationId']  # latitude/longitude
 
 
 @bot.message_handler(commands=['start', 'hello-world'])
-def send_start(message: str) -> None:
+def send_start(message: Message) -> None:
+    logger.info('Start bot by user_id: {user_id}'.format(user_id=message.from_user.id))
     """
     Функция-приветствие. Выводит приветственное сообщение пользователю, дает подсказку на использование команды /help
     :param message: (str) Принимает в качестве аргумента последнее отправленное пользователем сообщение
     :return: None
     """
-    bot.send_message(message.from_user.id, 'Привет! Я бот для поиска лучших вариантов отелей.\nДля ознакомления с '
-                                           'моими возможностями введи /help')
+    bot.send_message(message.from_user.id, '/lowprice — вывод самых дешёвых отелей в городе.')
+    user = User(message.from_user.id, message.from_user.first_name, message.from_user.last_name)
+    user.add_to_base(user.USER_ID, user.FIRST_NAME, user.SECOND_NAME)
+    bot.send_message(message.from_user.id, 'Привет, {first_name}! Я бот для поиска лучших вариантов отелей.'
+                                           '\nДля ознакомления с моими возможностями введи /help'.format(
+        first_name=users[message.from_user.id].FIRST_NAME))
 
 
 @bot.message_handler(commands=['help'])
-def send_help(message: str) -> None:
+def send_help(message: Message) -> None:
+    logger.info('Send help command by user: {user_id}'.format(user_id=message.from_user.id))
     """
     Функция-помощник. Оказывает помощь с навигацией по командам бота
     :param message: (str) Принимает в качестве аргумента последнее отправленное пользователем сообщение
     :return: None
     """
-    bot.send_message(message.from_user.id, '/lowprice — вывод самых дешёвых отелей в городе.')
-    bot.send_message(message.from_user.id, '/highprice — вывод самых дорогих отелей в городе.')
-    bot.send_message(message.from_user.id, '/bestdeal — вывод отелей, наиболее подходящих по цене и расположению от '
-                                           'центра.')
-    bot.send_message(message.from_user.id, '/history — вывод истории поиска отелей.')
+
+    bot.send_message(message.from_user.id, '''
+    /lowprice — вывод самых дешёвых отелей в городе.
+    \n/highprice — вывод самых дорогих отелей в городе.
+    \n/bestdeal — вывод отелей, наиболее подходящих по цене и расположению от центра.
+    \n/history — вывод истории поиска отелей.
+    ''')
 
 
-@bot.message_handler(commands=['lowprice'])
-def send_lowprice(message: str) -> None:
-    """
-    Функция send_lowprice. Выводит топ самых дешёвых отелей в городе.
-    :param message: (str) Принимает в качестве аргумента последнее отправленное пользователем сообщение
-    :return: None
-    """
-
-    bot.send_message(message.from_user.id, 'По какому городу осуществляем поиск?')
-    bot.register_next_step_handler(message, get_low_city)
-
-    # @bot.message_handler(content_types=['text'])
+@bot.message_handler(commands=['lowprice', 'highprice', 'bestedal'])
+def search(message: Message) -> None:
+    logger.info('Send {command} by user id: {user_id}'.format(user_id=message.from_user.id, command=message.text))
+    users[message.from_user.id].operation = message.text
+    bot.send_message(message.from_user.id, 'По какому городу будем искать?')
+    bot.register_next_step_handler(message, get_city)
 
 
-def get_low_city(message: str) -> None:
-    """
-    Функция get_city. Выявляет город, по которому будет осуществлен поиск
-    :param message: (str) Принимает в качестве аргумента последнее отправленное пользователем сообщение
-    :return: None
-    """
-
-    global low_city
-    low_city = message.text
-    bot.send_message(message.from_user.id, 'Какое кол-во отелей показать?')
-    bot.register_next_step_handler(message, get_low_hotels_count)
-
-    # @bot.message_handler(content_types=['text'])
+def get_city(message: Message) -> None:
+    logger.info('Get city: {city} by user: {user_id}'.format(user_id=message.from_user.id, city=message.text))
+    users[message.from_user.id].city = message.text
+    bot.send_message(message.from_user.id, 'Сколько отелей показать?')
+    bot.register_next_step_handler(message, get_count)
 
 
-def get_low_hotels_count(message: str) -> None:
-    """
-    Функция get_hotels_count. Выявляет кол-во отелей, необходимое к показу. Создает клавиатуру мессенджера.
-    :param message: (str) Принимает в качестве аргумента последнее отправленное пользователем сообщение
-    :return: None
-    """
+def get_count(message: Message) -> None:
+    logger.info('Get hotels count: {hotels_count} by user: {user_id}'.format(user_id=message.from_user.id,
+                                                                             hotels_count=message.text))
+    users[message.from_user.id].hotels_count = message.text
+    next_step = users[message.from_user.id].operation
+    if next_step == 'bestdeal':
+        bot.send_message(message.from_user.id, 'Какая максимальная стоимость отеля?')
+        bot.register_next_step_handler(message, get_max_price)
+    else:
+        keyboard = telebot.types.InlineKeyboardMarkup()
+        key_yes = telebot.types.InlineKeyboardButton(text='Да', callback_data='yes')
+        keyboard.add(key_yes)
+        key_no = telebot.types.InlineKeyboardButton(text='Нет', callback_data='no')
+        keyboard.add(key_no)
+        bot.send_message(message.from_user.id, 'Показывать фотографии отелей?', reply_markup=keyboard)
 
-    global low_hotels_count
-    low_hotels_count = message.text
+
+@bot.callback_query_handler(func=lambda call: call.data == 'yes' or call.data == 'no')
+def callback_worker(call):
+    logger.info('Get answer: {answer} by user: {user_id}'.format(user_id=call.from_user.id, answer=call.data))
+    if call.data == 'yes':
+        users[call.from_user.id].show_photos = True
+    else:
+        users[call.from_user.id].show_photos = False
+    next_step = users[call.from_user.id].operation
+    if next_step == '/lowprice':
+        lowprice.api_lowprice(users[call.from_user.id])
+    elif next_step == '/highprice':
+        highprice.api_highprice(users[call.from_user.id])
+    else:
+        bestdeal.api_bestdeal(users[call.from_user.id])
+
+
+def get_max_price(message: Message) -> None:
+    logger.info('Get cost: {cost} by user: {user_id}'.format(user_id=message.from_user.id, cost=message.text))
+    users[message.from_user.id].max_price = message.text
+    bot.send_message(message.from_user.id, 'Какая максимальная удаленность отеля?')
+    bot.register_next_step_handler(message, get_max_distance)
+
+
+def get_max_distance(message: Message) -> None:
+    logger.info(
+        'Get distance: {distance} by user: {user_id}'.format(user_id=message.from_user.id, distance=message.text))
+    users[message.from_user.id].max_distance = message.text
     keyboard = telebot.types.InlineKeyboardMarkup()
-    key_yes = telebot.types.InlineKeyboardButton(text='Да', callback_data='low_yes')
+    key_yes = telebot.types.InlineKeyboardButton(text='Да', callback_data='yes')
     keyboard.add(key_yes)
-    key_no = telebot.types.InlineKeyboardButton(text='Нет', callback_data='low_no')
+    key_no = telebot.types.InlineKeyboardButton(text='Нет', callback_data='no')
     keyboard.add(key_no)
     bot.send_message(message.from_user.id, 'Показывать фотографии отелей?', reply_markup=keyboard)
-
-    @bot.callback_query_handler(func=lambda call: call.data == 'low_yes' or call.data == 'low_no')
-    def callback_worker(call):
-        """
-        Функция callback_worker. Передает в переменную тип данных bool, в зависимости от нажатой кнопки.
-        :param call: (bool) Принимает одно из двух значений, в зависимости от нажатой на клавиатуре
-        мессенджера кнопки
-        :return: None
-        """
-
-        global low_hotels_count, low_city, history, counter
-        counter += 1
-
-        url = "https://hotels4.p.rapidapi.com/properties/list"
-        low_querystring = {
-            "destinationId": get_destination_id(low_city), "pageNumber": "1", "pageSize": '50',
-            "checkIn": datetime.datetime.today().strftime('%Y-%m-%d'),
-            "checkOut": datetime.datetime.today().strftime('%Y-%m-%d'),
-            "adults1": "1", "sortOrder": "PRICE", "locale": "ru_RU", "currency": "RUB"
-        }
-        headers = {
-            'x-rapidapi-host': "hotels4.p.rapidapi.com",
-            'x-rapidapi-key': "4213f44ecbmsh474379ffdaecd3ap1b4c3ajsncc60a40a7fb1"
-        }
-        response = requests.request("GET", url, headers=headers, params=low_querystring)
-        low_data = json.loads(response.text)
-        results = low_data['data']['body']['searchResults']['results']
-
-        history[counter] = {
-            'Команда': '/lowprice',
-            'Время': datetime.datetime.today().strftime('%d.%m.%Y %X'),
-            'Отели': []
-        }
-        limit = int(low_hotels_count)
-        for hotel in results:
-            try:
-                if limit > 0:
-                    bot.send_message(message.from_user.id,
-                                     'Наименование: {}\nАдрес: {}\nРасстояние до центра; {}\nСтоимость: {}'
-                                     .format(hotel['name'],
-                                             hotel['address']['streetAddress'],
-                                             hotel['landmarks'][0]['distance'],
-                                             hotel['ratePlan']['price']['current']))
-                    history[counter]['Отели'].append(hotel['name'])
-                    limit -= 1
-                    if call.data == "low_yes":
-                        photos_url = "https://hotels4.p.rapidapi.com/properties/get-hotel-photos"
-                        photos_querystring = {"id": hotel['id']}
-                        headers = {
-                            'x-rapidapi-host': "hotels4.p.rapidapi.com",
-                            'x-rapidapi-key': "4213f44ecbmsh474379ffdaecd3ap1b4c3ajsncc60a40a7fb1"
-                        }
-
-                        photos_response = requests.request("GET", photos_url, headers=headers, params=photos_querystring)
-                        photos_data = json.loads(photos_response.text)
-                        bot.send_photo(message.from_user.id, photos_data['hotelImages'][0]['baseUrl']
-                                       .replace('{size}', 'z'))
-                        bot.send_photo(message.from_user.id, photos_data['roomImages'][0]['images'][0]['baseUrl']
-                                       .replace('{size}', 'z'))
-                else:
-                    break
-            except KeyError:
-                continue
-        bot.send_message(message.from_user.id, 'Поиск окончен.')
-
-
-@bot.message_handler(commands=['highprice'])
-def send_highprice(message: str) -> None:
-    """
-    Функция send_highprice. Выводит топ самых дорогих отелей в городе.
-    :param message: (str) Принимает в качестве аргумента последнее отправленное пользователем сообщение
-    :return: None
-    """
-
-    bot.send_message(message.from_user.id, 'По какому городу осуществляем поиск?')
-    bot.register_next_step_handler(message, get_high_city)
-
-    # @bot.message_handler(content_types=['text'])
-
-
-def get_high_city(message: str) -> None:
-    """
-    Функция get_city. Выявляет город, по которому будет осуществлен поиск
-    :param message: (str) Принимает в качестве аргумента последнее отправленное пользователем сообщение
-    :return: None
-    """
-
-    global high_city
-    high_city = message.text
-    bot.send_message(message.from_user.id, 'Какое кол-во отелей показать?')
-    bot.register_next_step_handler(message, get_high_hotels_count)
-
-    # @bot.message_handler(content_types=['text'])
-
-
-def get_high_hotels_count(message: str) -> None:
-    """
-    Функция get_hotels_count. Выявляет кол-во отелей, необходимое к показу. Создает клавиатуру мессенджера.
-    :param message: (str) Принимает в качестве аргумента последнее отправленное пользователем сообщение
-    :return: None
-    """
-
-    global high_hotels_count
-    high_hotels_count = message.text
-    keyboard = telebot.types.InlineKeyboardMarkup()
-    key_yes = telebot.types.InlineKeyboardButton(text='Да', callback_data='high_yes')
-    keyboard.add(key_yes)
-    key_no = telebot.types.InlineKeyboardButton(text='Нет', callback_data='high_no')
-    keyboard.add(key_no)
-    bot.send_message(message.from_user.id, 'Показывать фотографии отелей?', reply_markup=keyboard)
-
-    @bot.callback_query_handler(func=lambda call: call.data == 'high_yes' or call.data == 'high_no')
-    def callback_worker(call):
-        """
-        Функция callback_worker. Передает в переменную тип данных bool, в зависимости от нажатой кнопки.
-        :param call: (bool) Принимает одно из двух значений, в зависимости от нажатой на клавиатуре
-                            мессенджера кнопки
-        :return: None
-        """
-
-        global high_hotels_count, high_city, history, counter
-        counter += 1
-
-        url = "https://hotels4.p.rapidapi.com/properties/list"
-        high_querystring = {
-            "destinationId": get_destination_id(high_city), "pageNumber": "1", "pageSize": '50',
-            "checkIn": datetime.datetime.today().strftime('%Y-%m-%d'),
-            "checkOut": datetime.datetime.today().strftime('%Y-%m-%d'),
-            "adults1": "1", "sortOrder": "PRICE_HIGHEST_FIRST", "locale": "ru_RU", "currency": "RUB"
-        }
-        headers = {
-            'x-rapidapi-host': "hotels4.p.rapidapi.com",
-            'x-rapidapi-key': "4213f44ecbmsh474379ffdaecd3ap1b4c3ajsncc60a40a7fb1"
-        }
-        high_response = requests.request("GET", url, headers=headers, params=high_querystring)
-        high_data = json.loads(high_response.text)
-        results = high_data['data']['body']['searchResults']['results']
-
-        history[counter] = {
-            'Команда': '/highprice',
-            'Время': datetime.datetime.today().strftime('%d.%m.%Y %X'),
-            'Отели': []
-        }
-        limit = int(high_hotels_count)
-        for hotel in results:
-            try:
-                if limit > 0:
-                    bot.send_message(message.from_user.id,
-                                     'Наименование: {}\nАдрес: {}\nРасстояние до центра; {}\nСтоимость: {}'
-                                     .format(hotel['name'],
-                                             hotel['address']['streetAddress'],
-                                             hotel['landmarks'][0]['distance'],
-                                             hotel['ratePlan']['price']['current']))
-                    history[counter]['Отели'].append(hotel['name'])
-                    limit -= 1
-                    if call.data == "high_yes":
-                        photos_url = "https://hotels4.p.rapidapi.com/properties/get-hotel-photos"
-                        photo_querystring = {"id": hotel['id']}
-                        headers = {
-                            'x-rapidapi-host': "hotels4.p.rapidapi.com",
-                            'x-rapidapi-key': "4213f44ecbmsh474379ffdaecd3ap1b4c3ajsncc60a40a7fb1"
-                        }
-
-                        photos_response = requests.request("GET", photos_url, headers=headers, params=photo_querystring)
-                        photos_data = json.loads(photos_response.text)
-                        bot.send_photo(message.from_user.id, photos_data['hotelImages'][0]['baseUrl']
-                                       .replace('{size}', 'z'))
-                        bot.send_photo(message.from_user.id, photos_data['roomImages'][0]['images'][0]['baseUrl']
-                                       .replace('{size}', 'z'))
-                else:
-                    break
-            except KeyError:
-                continue
-        bot.send_message(message.from_user.id, 'Поиск окончен.')
-
-
-@bot.message_handler(commands=['bestdeal'])
-def send_bestdeal(message: str) -> None:
-    '''
-    Функция send_bestdeal. Выводит топ отелей по соотношению цена/удаленность от центра.
-    :param message: (str) Принимает в качестве аргумента последнее отправленное пользователем сообщение
-    :return: None
-    '''
-    bot.send_message(message.from_user.id, 'По какому городу осуществляем поиск?')
-    bot.register_next_step_handler(message, get_best_city)
-
-
-def get_best_city(message: str) -> None:
-    '''
-    Функция get_city. Выявляет город, по которому будет осуществлен поиск
-    :param message: (str) Принимает в качестве аргумента последнее отправленное пользователем сообщение
-    :return: None
-    '''
-    global best_city
-    best_city = message.text
-    bot.send_message(message.from_user.id, 'Какая максимальная стоимость?')
-    bot.register_next_step_handler(message, get_price_limit)
-
-
-def get_price_limit(message: str) -> None:
-    '''
-    Функция get_price_limit. Запрашивает у пользователя максимальную стоимость отеля.
-    :param message: (str) Принимает в качестве аргумента последнее отправленное пользователем сообщение
-    :return: None
-    '''
-    global price_limit
-    price_limit = message.text
-    bot.send_message(message.from_user.id, 'Какое максимальное расстояние от центра в км?')
-    bot.register_next_step_handler(message, get_dist_limit)
-
-
-def get_dist_limit(message: str) -> None:
-    '''
-    Функция get_price_limit. Запрашивает у пользователя максимальную удаленность отеля от центра. Создает
-    клавиатуру мессенджера.
-    :param message: (str) Принимает в качестве аргумента последнее отправленное пользователем сообщение
-    :return: None
-    '''
-    global dist_limit
-    dist_limit = message.text
-    bot.send_message(message.from_user.id, 'Какое кол-во отелей показать?')
-    bot.register_next_step_handler(message, get_best_hotels_count)
-
-
-def get_best_hotels_count(message: str) -> None:
-    """
-    Функция get_hotels_count. Выявляет кол-во отелей, необходимое к показу. Создает клавиатуру мессенджера.
-    :param message: (str) Принимает в качестве аргумента последнее отправленное пользователем сообщение
-    :return: None
-    """
-
-    global best_hotels_count
-    best_hotels_count = message.text
-    keyboard = telebot.types.InlineKeyboardMarkup()
-    key_yes = telebot.types.InlineKeyboardButton(text='Да', callback_data='best_yes')
-    keyboard.add(key_yes)
-    key_no = telebot.types.InlineKeyboardButton(text='Нет', callback_data='best_no')
-    keyboard.add(key_no)
-    bot.send_message(message.from_user.id, 'Показывать фотографии отелей?', reply_markup=keyboard)
-
-    @bot.callback_query_handler(func=lambda call: call.data == 'best_yes' or call.data == 'best_no')
-    def callback_worker(call):
-        """
-        Функция callback_worker. Передает в переменную тип данных bool, в зависимости от нажатой кнопки.
-        :param call: (bool) Принимает одно из двух значений, в зависимости от нажатой на клавиатуре
-                            мессенджера кнопки
-        :return: None
-        """
-
-        global best_hotels_count, best_city, dist_limit, price_limit, history, counter
-        counter += 1
-
-        url = "https://hotels4.p.rapidapi.com/properties/list"
-        best_querystring = {
-            "destinationId": get_destination_id(best_city), "pageNumber": "1",
-            "pageSize": '50',
-            "checkIn": datetime.datetime.today().strftime('%Y-%m-%d'),
-            "checkOut": datetime.datetime.today().strftime('%Y-%m-%d'),
-            "adults1": "1", "priceMin": '1', "priceMax": price_limit, "sortOrder": "BEST_SELLER",
-            "locale": "ru_RU", "currency": "RUB"
-        }
-        headers = {
-            'x-rapidapi-host': "hotels4.p.rapidapi.com",
-            'x-rapidapi-key': "4213f44ecbmsh474379ffdaecd3ap1b4c3ajsncc60a40a7fb1"
-        }
-        best_response = requests.request("GET", url, headers=headers, params=best_querystring)
-        best_data = json.loads(best_response.text)
-        results = best_data['data']['body']['searchResults']['results']
-
-        history[counter] = {
-            'Команда': '/bestdeal',
-            'Время': datetime.datetime.today().strftime('%d.%m.%Y %X'),
-            'Отели': []
-        }
-        limit = int(best_hotels_count)
-        for hotel in results:
-            try:
-
-                distance = hotel['landmarks'][0]['distance'].replace(' км', '')
-                if float(distance.replace(',', '.')) <= float(dist_limit) and limit > 0:
-                    bot.send_message(message.from_user.id,
-                                     'Наименование: {}\nАдрес: {}\nРасстояние до центра; {}\nСтоимость: {}'
-                                     .format(hotel['name'],
-                                             hotel['address']['streetAddress'],
-                                             hotel['landmarks'][0]['distance'],
-                                             hotel['ratePlan']['price']['current']))
-                    history[counter]['Отели'].append(hotel['name'])
-                    limit -= 1
-                    if call.data == "best_yes":
-                        photos_url = "https://hotels4.p.rapidapi.com/properties/get-hotel-photos"
-                        photo_querystring = {"id": hotel['id']}
-                        headers = {
-                            'x-rapidapi-host': "hotels4.p.rapidapi.com",
-                            'x-rapidapi-key': "4213f44ecbmsh474379ffdaecd3ap1b4c3ajsncc60a40a7fb1"
-                        }
-
-                        photos_response = requests.request("GET", photos_url, headers=headers, params=photo_querystring)
-                        photos_data = json.loads(photos_response.text)
-                        bot.send_photo(message.from_user.id, photos_data['hotelImages'][0]['baseUrl']
-                                       .replace('{size}', 'z'))
-                        bot.send_photo(message.from_user.id, photos_data['roomImages'][0]['images'][0]['baseUrl']
-                                       .replace('{size}', 'z'))
-                else:
-                    break
-            except KeyError:
-                continue
-        bot.send_message(message.from_user.id, 'Поиск окончен.')
 
 
 @bot.message_handler(commands=['history'])
 def send_history(message: str) -> None:
+    logger.info('Send history to user: {user_id}'.format(user_id=message.from_user.id))
+
     '''
     Функция history. Выводит пользователю историю его запросов.
     :param message: (str) Принимает в качестве аргумента последнее отправленное пользователем сообщение
     :return: None
     '''
-    global history
+    history = users[message.from_user.id].history
     for i_search in history:
         history_result = '''
         Команда: {command}
@@ -427,8 +133,12 @@ def send_history(message: str) -> None:
                    hotels=', '.join(history[i_search]['Отели']))
         bot.send_message(message.from_user.id, history_result)
 
-while True:
-    try:
-        bot.polling(none_stop=True, interval=0)
-    except:
-        time.sleep(10)
+
+if __name__ == '__main__':
+    while True:
+        try:
+            bot.polling(none_stop=True, interval=0)
+            # bot.infinity_polling()
+        except Exception as ex:
+            logger.error(f'Raised exception {ex}')
+            time.sleep(10)
