@@ -8,10 +8,11 @@ from botrequests.get_photos import get_photo
 from loguru import logger
 from classes import user_class
 from database.users_database import users
+from classes.user_class import User
 from bot_init import bot
 
 
-def api_highprice(user):
+def api_highprice(user: User):
     """
     Осуществляет запрос информации у API, применяет к полученным данным алгоритм сортировки по самой высокой цене,
     заносит результаты в историю и отправляет их пользователю в чат

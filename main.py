@@ -1,5 +1,5 @@
 import telebot
-from telebot.types import Message
+from telebot.types import Message, CallbackQuery
 from database.users_database import users
 from classes.user_class import User
 from botrequests import lowprice, highprice, bestdeal
@@ -12,15 +12,14 @@ from loguru import logger
 logger.add('debug.log', format='{time} {level} {message}', level='DEBUG', rotation='10 MB', compression='zip')
 
 
-
 @bot.message_handler(commands=['start', 'hello-world'])
 def send_start(message: Message) -> None:
-    logger.info('Start bot by user_id: {user_id}'.format(user_id=message.from_user.id))
     """
     Функция-приветствие. Выводит приветственное сообщение пользователю, дает подсказку на использование команды /help
-    :param message: (str) Принимает в качестве аргумента последнее отправленное пользователем сообщение
+    :param message: Принимает в качестве аргумента последнее отправленное пользователем сообщение
     :return: None
     """
+    logger.info('Start bot by user_id: {user_id}'.format(user_id=message.from_user.id))
     bot.send_message(message.from_user.id, '/lowprice — вывод самых дешёвых отелей в городе.')
     user = User(message.from_user.id, message.from_user.first_name, message.from_user.last_name)
     user.add_to_base(user.USER_ID, user.FIRST_NAME, user.SECOND_NAME)
@@ -31,13 +30,12 @@ def send_start(message: Message) -> None:
 
 @bot.message_handler(commands=['help'])
 def send_help(message: Message) -> None:
-    logger.info('Send help command by user: {user_id}'.format(user_id=message.from_user.id))
     """
     Функция-помощник. Оказывает помощь с навигацией по командам бота
-    :param message: (str) Принимает в качестве аргумента последнее отправленное пользователем сообщение
+    :param message: Принимает в качестве аргумента последнее отправленное пользователем сообщение
     :return: None
     """
-
+    logger.info('Send help command by user: {user_id}'.format(user_id=message.from_user.id))
     bot.send_message(message.from_user.id, '''
     /lowprice — вывод самых дешёвых отелей в городе.
     \n/highprice — вывод самых дорогих отелей в городе.
@@ -48,6 +46,11 @@ def send_help(message: Message) -> None:
 
 @bot.message_handler(commands=['lowprice', 'highprice', 'bestedal'])
 def search(message: Message) -> None:
+    """
+    Стартовая функция для команд-поиска. Запрашивает у пользователя город.
+    :param message: Принимает в качестве аргумента последнее отправленное пользователем сообщение
+    :return: None
+    """
     logger.info('Send {command} by user id: {user_id}'.format(user_id=message.from_user.id, command=message.text))
     users[message.from_user.id].operation = message.text
     bot.send_message(message.from_user.id, 'По какому городу будем искать?')
@@ -55,6 +58,11 @@ def search(message: Message) -> None:
 
 
 def get_city(message: Message) -> None:
+    """
+    Функция фиксирования города для поиска за пользователем, также запрашивает кол-во отелей для выводаL
+    :param message: Принимает в качестве аргумента последнее отправленное пользователем сообщение
+    :return: None
+    """
     logger.info('Get city: {city} by user: {user_id}'.format(user_id=message.from_user.id, city=message.text))
     users[message.from_user.id].city = message.text
     bot.send_message(message.from_user.id, 'Сколько отелей показать?')
@@ -62,6 +70,12 @@ def get_city(message: Message) -> None:
 
 
 def get_count(message: Message) -> None:
+    """
+    Функция фиксирования кол-ва отелей для вывода за пользователем, также запрашивает вывод фото или максимальную
+    стоимость в зависимости от выбранной команды
+    :param message: Принимает в качестве аргумента последнее отправленное пользователем сообщение
+    :return: None
+    """
     logger.info('Get hotels count: {hotels_count} by user: {user_id}'.format(user_id=message.from_user.id,
                                                                              hotels_count=message.text))
     users[message.from_user.id].hotels_count = message.text
@@ -79,7 +93,12 @@ def get_count(message: Message) -> None:
 
 
 @bot.callback_query_handler(func=lambda call: call.data == 'yes' or call.data == 'no')
-def callback_worker(call):
+def callback_worker(call: CallbackQuery) -> None:
+    """
+    Обработчик ответа пользователя на вывод фотографий с дальнейшим закреплением за пользователем
+    :param call: Ответ пользователя по клавише
+    :return: None
+    """
     logger.info('Get answer: {answer} by user: {user_id}'.format(user_id=call.from_user.id, answer=call.data))
     if call.data == 'yes':
         users[call.from_user.id].show_photos = True
@@ -95,6 +114,12 @@ def callback_worker(call):
 
 
 def get_max_price(message: Message) -> None:
+    """
+    Функция фиксирования максимальной стоимости отелей для вывода за пользователем,
+    также запрашивает удаленность
+    :param message: Принимает в качестве аргумента последнее отправленное пользователем сообщение
+    :return: None
+    """
     logger.info('Get cost: {cost} by user: {user_id}'.format(user_id=message.from_user.id, cost=message.text))
     users[message.from_user.id].max_price = message.text
     bot.send_message(message.from_user.id, 'Какая максимальная удаленность отеля?')
@@ -102,6 +127,11 @@ def get_max_price(message: Message) -> None:
 
 
 def get_max_distance(message: Message) -> None:
+    """
+    Функция фиксирования удаленности отелей для вывода за пользователем, также запрашивает вывод фото
+    :param message: Принимает в качестве аргумента последнее отправленное пользователем сообщение
+    :return: None
+    """
     logger.info(
         'Get distance: {distance} by user: {user_id}'.format(user_id=message.from_user.id, distance=message.text))
     users[message.from_user.id].max_distance = message.text
@@ -115,8 +145,12 @@ def get_max_distance(message: Message) -> None:
 
 @bot.message_handler(commands=['history'])
 def send_history(message: str) -> None:
+    """
+    Отправляет историю поиска пользователя
+    :param message: Принимает в качестве аргумента последнее отправленное пользователем сообщение
+    :return: None
+    """
     logger.info('Send history to user: {user_id}'.format(user_id=message.from_user.id))
-
     '''
     Функция history. Выводит пользователю историю его запросов.
     :param message: (str) Принимает в качестве аргумента последнее отправленное пользователем сообщение
