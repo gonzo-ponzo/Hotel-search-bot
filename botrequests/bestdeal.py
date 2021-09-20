@@ -1,5 +1,5 @@
 from classes.user_class import User
-from env_var import API_KEY
+from env_vars import API_KEY
 import requests
 import json
 import datetime

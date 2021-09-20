@@ -1,4 +1,4 @@
-from env_var import API_KEY, TOKEN
+from env_vars import API_KEY, TOKEN
 import telebot
 import requests
 import json
