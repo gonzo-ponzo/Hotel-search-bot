@@ -42,7 +42,7 @@ def api_bestdeal(user: User) -> None:
             try:
                 distance = hotel['landmarks'][0]['distance'].replace(' км', '')
 
-                if counter < int(user.hotels_count) and float(distance.replace(',', '.')) <= float(user.max_distance):
+                if counter <= int(user.hotels_count) and float(distance.replace(',', '.')) <= float(user.max_distance):
                     counter += 1
                     user.search_result[counter] = {'text': '', 'image': ''}
                     user.search_result[counter]['text'] = 'Наименование: {}' \
@@ -61,14 +61,17 @@ def api_bestdeal(user: User) -> None:
                 else:
                     logger.info('Search for user: {user_id} ended successfully'.format(user_id=user.USER_ID))
                     break
-            except KeyError:
+            except:
                 logger.error('{counter} hotel has not full info. Skipped'.format(counter=counter + 1))
                 continue
         for i_result in user.search_result:
-            if user.show_photos:
-                bot.send_photo(user.USER_ID, user.search_result[i_result]['image'],
-                               caption=user.search_result[i_result]['text'])
-            else:
-                bot.send_message(user.USER_ID, user.search_result[i_result]['text'])
+            try:
+                if user.show_photos:
+                    bot.send_photo(user.USER_ID, user.search_result[i_result + 1]['image'],
+                                   caption=user.search_result[i_result + 1]['text'])
+                else:
+                    bot.send_message(user.USER_ID, user.search_result[i_result + 1]['text'])
+            except:
+                logger.error('Empty hotel. Skipped'.format(counter=counter + 1))
     except Exception as ex:
         logger.error(f'Raised exception {ex}')

@@ -20,7 +20,6 @@ def send_start(message: Message) -> None:
     :return: None
     """
     logger.info('Start bot by user_id: {user_id}'.format(user_id=message.from_user.id))
-    bot.send_message(message.from_user.id, '/lowprice — вывод самых дешёвых отелей в городе.')
     user = User(message.from_user.id, message.from_user.first_name, message.from_user.last_name)
     user.add_to_base(user.USER_ID, user.FIRST_NAME, user.SECOND_NAME)
     bot.send_message(message.from_user.id, 'Привет, {first_name}! Я бот для поиска лучших вариантов отелей.'
@@ -44,7 +43,7 @@ def send_help(message: Message) -> None:
     ''')
 
 
-@bot.message_handler(commands=['lowprice', 'highprice', 'bestedal'])
+@bot.message_handler(commands=['lowprice', 'highprice', 'bestdeal'])
 def search(message: Message) -> None:
     """
     Стартовая функция для команд-поиска. Запрашивает у пользователя город.
@@ -59,7 +58,7 @@ def search(message: Message) -> None:
 
 def get_city(message: Message) -> None:
     """
-    Функция фиксирования города для поиска за пользователем, также запрашивает кол-во отелей для выводаL
+    Функция фиксирования города для поиска за пользователем, также запрашивает кол-во отелей для вывода
     :param message: Принимает в качестве аргумента последнее отправленное пользователем сообщение
     :return: None
     """
@@ -80,7 +79,7 @@ def get_count(message: Message) -> None:
                                                                              hotels_count=message.text))
     users[message.from_user.id].hotels_count = message.text
     next_step = users[message.from_user.id].operation
-    if next_step == 'bestdeal':
+    if next_step == '/bestdeal':
         bot.send_message(message.from_user.id, 'Какая максимальная стоимость отеля?')
         bot.register_next_step_handler(message, get_max_price)
     else:
